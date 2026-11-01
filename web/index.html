@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billing Tracker</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root { --bg:#fafafa; --fg:#1d1d1f; --muted:#6e6e73; --line:#e3e3e6; --card:#fff;
+          --accent:#2f6fed; --bad:#c62828; --badbg:#fdecea; --warn:#8a5a00; --warnbg:#fff4d6; --ok:#2e7d32; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141416; --fg:#ececf0; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20;
+            --accent:#6b9bff; --bad:#ff6b6b; --badbg:#3a1d1d; --warn:#f0c060; --warnbg:#3a3018; --ok:#7bd88f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg);
+         font:14px/1.45 system-ui, sans-serif; }
+  main { max-width:1000px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  h1 { font-size:20px; margin:0; flex:1; }
+  h2 { font-size:15px; margin:28px 0 8px; color:var(--muted); font-weight:600; }
+  button { font:inherit; padding:6px 12px; border-radius:6px; border:1px solid var(--line);
+           background:var(--card); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  #status { color:var(--muted); font-size:13px; width:100%; white-space:pre-line; }
+  #status.error { color:var(--bad); }
+  .wrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; }
+  tr:last-child td { border-bottom:none; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.date { white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tr.overdue td { background:var(--badbg); }
+  tr.review td { background:var(--warnbg); }
+  tr.paid td { color:var(--muted); }
+  .tag { font-size:11px; padding:1px 6px; border-radius:10px; white-space:nowrap; }
+  .tag.overdue { color:var(--bad); border:1px solid var(--bad); }
+  .tag.review { color:var(--warn); border:1px solid var(--warn); }
+  .tag.paid { color:var(--ok); border:1px solid var(--ok); }
+  .details { font-size:12px; color:var(--muted); }
+  .details b { color:var(--fg); font-weight:500; }
+  .amount-form { display:flex; gap:4px; }
+  .amount-form input { width:80px; font:inherit; padding:4px 6px; border:1px solid var(--line);
+                       border-radius:6px; background:var(--bg); color:var(--fg); }
+  label.paid { display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; }
+  .empty { padding:16px; color:var(--muted); }
+  a { color:var(--accent); }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .tabs a { padding:8px 14px; text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tabs a.active { color:var(--fg); border-bottom-color:var(--accent); }
+  tr.total td { font-weight:600; }
+  .filter { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin:0 0 8px; }
+  .sum { color:var(--muted); margin:0 0 8px; }
+  .filter .sum { margin:0; }
+  .filter select { font:inherit; padding:4px 8px; border:1px solid var(--line); border-radius:6px;
+                   background:var(--card); color:var(--fg); margin-left:6px; }
+  details > summary { cursor:pointer; list-style:none; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary h2 { display:inline-block; }
+  details > summary h2::before { content:'▸ '; }
+  details[open] > summary h2::before { content:'▾ '; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Billing Tracker</h1>
+    <button id="fetch" class="primary">Fetch new emails</button>
+    <div id="status"></div>
+  </header>
+
+  <nav class="tabs">
+    <a href="#bills" data-tab="bills">Bills</a>
+    <a href="#subscriptions" data-tab="subscriptions">Subscriptions</a>
+  </nav>
+
+  <section id="tab-bills">
+    <h2>Latest</h2>
+    <div class="sum" id="latest-sum"></div>
+    <div class="wrap"><table id="latest"></table></div>
+
+    <details id="archive-box">
+      <summary><h2>Archive <span id="archive-count"></span></h2></summary>
+      <div class="filter">
+        <label>Month <select id="month"><option value="">All</option></select></label>
+        <span class="sum" id="archive-sum"></span>
+      </div>
+      <div class="wrap"><table id="archive"></table></div>
+    </details>
+  </section>
+
+  <section id="tab-subscriptions" hidden>
+    <h2>Subscriptions</h2>
+    <div class="wrap"><table id="subs"></table></div>
+  </section>
+</main>
+
+<script>
+const HEAD = '<tr><th>Vendor</th><th>Issued</th><th>Due</th><th style="text-align:right">Amount</th><th>Details</th><th>Paid</th></tr>';
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const euro = v => v == null ? '—' : Number(v).toLocaleString('el-GR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' €';
+const day = d => d ? d.split('-').reverse().join('/') : '—';
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const monthLabel = ym => { const [y, m] = ym.split('-'); return `${MONTHS[m - 1]}/${y}`; };
+
+async function api(path, body) {
+  const opts = body === undefined ? {} :
+    {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  const res = await fetch(path, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function details(b) {
+  const x = b.extra, parts = [];
+  if (x.payment_code) parts.push(`Payment code: <b>${esc(x.payment_code)}</b>`);
+  if (x.recipient_name) parts.push(`Recipient: <b>${esc(x.recipient_name)}</b>`);
+  if (x.iban) parts.push(`IBAN: <b>${esc(x.iban)}</b>`);
+  if (x.payment_comment) parts.push(`Comment: <b>${esc(x.payment_comment)}</b>`);
+  if (b.period_start && !x.month) parts.push(`Period: ${day(b.period_start)} – ${day(b.period_end)}`);
+  if (x.consumption_kwh != null) parts.push(`${x.consumption_kwh} kWh (${x.meter_previous} → ${x.meter_last})`);
+  if (x.consumption_m3 != null) parts.push(`${x.consumption_m3} m³ (${x.meter_previous} → ${x.meter_last})`);
+  if (b.attachment_path) parts.push(`<a href="/api/bills/${b.id}/attachment" target="_blank">Photo</a>`);
+  if (b.has_email) parts.push(`<a href="/bills/${b.id}/email" target="_blank">Email</a>`);
+  if (b.paid_on) parts.push(`Paid on ${day(b.paid_on)}`);
+  return parts.join('<br>');
+}
+
+function row(b) {
+  const cls = b.status === 'paid' ? 'paid' : b.status === 'needs_review' ? 'review' : b.overdue ? 'overdue' : '';
+  const tag = b.status === 'needs_review' ? '<span class="tag review">needs amount</span>'
+            : b.overdue ? '<span class="tag overdue">overdue</span>' : '';
+  const amount = b.status === 'needs_review'
+    ? `<form class="amount-form" data-id="${b.id}"><input name="amount" placeholder="41,22" inputmode="decimal" required><button>Save</button></form>`
+    : euro(b.total_due);
+  const paid = `<label class="paid"><input type="checkbox" data-id="${b.id}" ${b.status === 'paid' ? 'checked' : ''}
+                 ${b.status === 'needs_review' ? 'disabled title="Enter the amount first"' : ''}> paid</label>`;
+  const dates = b.extra.month   // recurring (loan): the whole month, not a day
+    ? `<td class="date" colspan="2">${monthLabel(b.extra.month)}</td>`
+    : `<td class="date">${day(b.issue_date)}</td><td class="date">${day(b.due_date)}</td>`;
+  return `<tr class="${cls}"><td>${esc(b.vendor)} ${tag}</td>${dates}<td class="num">${amount}</td>
+          <td class="details">${details(b)}</td><td>${paid}</td></tr>`;
+}
+
+function fill(table, bills, emptyText) {
+  table.innerHTML = bills.length ? HEAD + bills.map(row).join('') : `<tr><td class="empty">${emptyText}</td></tr>`;
+}
+
+// Month a bill belongs to: its issue date (the loan has none, so it uses its own month).
+const billMonth = b => (b.issue_date || '').slice(0, 7) || b.extra.month;
+let latest = [], archive = [];
+
+async function load() {
+  const bills = await api('/api/bills');           // newest first
+  const seen = new Set();
+  latest = []; archive = [];
+  for (const b of bills) (seen.has(b.vendor) ? archive : (seen.add(b.vendor), latest)).push(b);
+  fill(document.getElementById('latest'), latest, 'No bills yet. Press "Fetch new emails".');
+  document.getElementById('latest-sum').textContent = latest.length ? sumText(latest) : '';
+  document.getElementById('archive-count').textContent = `(${archive.length})`;
+  fillMonths();
+  renderArchive();
+}
+
+// "Total … · unpaid … · n without amount", summed in whole cents so it is exact
+function sumText(bills) {
+  const cents = list => list.reduce((t, b) => t + (b.total_due == null ? 0 : Math.round(Number(b.total_due) * 100)), 0);
+  const missing = bills.filter(b => b.total_due == null).length;
+  return `Total ${euro(cents(bills) / 100)} · unpaid ${euro(cents(bills.filter(b => b.status !== 'paid')) / 100)}`
+       + (missing ? ` · ${missing} without amount` : '');
+}
+
+function fillMonths() {
+  const select = document.getElementById('month'), current = select.value;
+  const months = [...new Set(archive.map(billMonth).filter(Boolean))].sort().reverse();
+  select.innerHTML = '<option value="">All</option>' +
+    months.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join('');
+  select.value = months.includes(current) ? current : '';
+}
+
+function renderArchive() {
+  const month = document.getElementById('month').value;
+  const bills = month ? archive.filter(b => billMonth(b) === month) : archive;
+  document.getElementById('archive-sum').textContent = month ? sumText(bills) : '';
+  fill(document.getElementById('archive'), bills, month ? 'No bills this month.' : 'Nothing archived.');
+}
+
+document.getElementById('month').addEventListener('change', renderArchive);
+
+function setStatus(text, isError) {
+  const el = document.getElementById('status');
+  el.textContent = text;
+  el.className = isError ? 'error' : '';
+}
+
+document.getElementById('fetch').addEventListener('click', async e => {
+  e.target.disabled = true;
+  setStatus('Fetching…');
+  try {
+    const s = await api('/api/fetch', {});
+    let msg = `Added ${s.added.length}, already stored ${s.skipped}, not bills ${s.ignored}, failed ${s.failed.length}`;
+    for (const [vendor, subject, err] of s.failed) msg += `\n! ${vendor}: ${subject} → ${err}`;
+    setStatus(msg, s.failed.length > 0);
+    await load();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+document.addEventListener('change', async e => {
+  if (!e.target.matches('input[type=checkbox][data-id]')) return;
+  try {
+    await api(`/api/bills/${e.target.dataset.id}/paid`, {paid: e.target.checked});
+    await load();
+  } catch (err) { setStatus(err.message, true); e.target.checked = !e.target.checked; }
+});
+
+document.addEventListener('submit', async e => {
+  if (!e.target.matches('.amount-form')) return;
+  e.preventDefault();
+  try {
+    await api(`/api/bills/${e.target.dataset.id}/amount`, {amount: e.target.amount.value});
+    await load();
+  } catch (err) { setStatus(err.message, true); }
+});
+
+async function loadSubs() {
+  const subs = await api('/api/subscriptions');
+  // whole cents (integers) so the maths is exact; the monthly total rounds UP to the next cent
+  const yearCents = subs.reduce((t, s) => t + Math.round(Number(s.per_year) * 100), 0);
+  const monthCents = Math.ceil(yearCents / 12);
+  document.getElementById('subs').innerHTML =
+    '<tr><th>Service</th><th style="text-align:right">Amount</th><th>Billed</th><th style="text-align:right">Per month</th></tr>' +
+    subs.map(s => `<tr><td>${esc(s.name)}</td><td class="num">${euro(s.amount)}</td><td>${esc(s.cycle)}</td>
+                   <td class="num">${euro(s.per_month)}</td></tr>`).join('') +
+    `<tr class="total"><td>Total per month</td><td></td><td></td><td class="num">${euro(monthCents / 100)}</td></tr>` +
+    `<tr class="total"><td>Total per year</td><td></td><td></td><td class="num">${euro(yearCents / 100)}</td></tr>`;
+}
+
+function showTab() {
+  const tab = location.hash === '#subscriptions' ? 'subscriptions' : 'bills';
+  for (const name of ['bills', 'subscriptions']) {
+    document.getElementById(`tab-${name}`).hidden = name !== tab;
+    document.querySelector(`.tabs a[data-tab="${name}"]`).classList.toggle('active', name === tab);
+  }
+}
+window.addEventListener('hashchange', showTab);
+showTab();
+
+load().catch(err => setStatus(err.message, true));
+loadSubs().catch(err => setStatus(err.message, true));
+</script>
+</body>
+</html>

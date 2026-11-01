@@ -1,0 +1,7 @@
+# Real bills and personal data: never commit
+bills.toml
+README.private.md
+samples/
+data/
+demo/data/
+__pycache__/

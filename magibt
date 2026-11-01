@@ -1,0 +1,524 @@
+#!/usr/bin/env python3
+"""magibt: the bill tracker in the terminal (same picker style as magicc/magips).
+
+  magibt              interactive picker
+  magibt -s           print the tables (also what you get when piping)
+  magibt --no-color  plain output (NO_COLOR=1 works too)
+
+Bills tab: the latest bill per vendor. Space opens that vendor's history,
+where p marks paid and l shows the links (email source, photo) to open in
+the browser. f fetches new bill emails. The web server is started in the
+background for those links (without Proton Bridge); Bridge starts on the
+first f. Both stop when magibt exits, even on SIGKILL.
+"""
+import imaplib
+import os
+import re
+import select
+import shutil
+import signal
+import socket
+import sys
+import termios
+import textwrap
+from contextlib import closing
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import bridge  # noqa: E402
+import children  # noqa: E402
+import db  # noqa: E402
+import emails  # noqa: E402
+import ingest  # noqa: E402
+import mail  # noqa: E402
+import recurring  # noqa: E402
+import subscriptions  # noqa: E402
+from parsers.common import amount as parse_amount  # noqa: E402
+
+SERVER = ("127.0.0.1", 8421)
+BASE_URL = f"http://{SERVER[0]}:{SERVER[1]}"
+
+# ANSI escape codes: the terminal reads these as commands, not text.
+CSI = "\x1b["
+HIDE_CURSOR, SHOW_CURSOR = CSI + "?25l", CSI + "?25h"
+CLEAR_DOWN = CSI + "J"
+BOLD, DIM, RESET, REVERSE = CSI + "1m", CSI + "2m", CSI + "0m", CSI + "7m"
+CELL_END = CSI + "22;39m"           # end a cell's color but keep the line's background
+SEL_BG = CSI + "48;5;236m"          # selected line: dark grey background
+TAB_ON = CSI + "1;30;46m"           # selected tab: black on cyan
+HEAD = "2;36"                       # column headers: faded cyan
+TITLE = "1;36"                      # section titles in -s
+
+MAX_VISIBLE = 12
+COLOR = False                       # set in main()
+TABS = ["Bills", "Subscriptions"]
+MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+# status -> (label, color)
+STATUS = {"paid": ("paid", "32"), "unpaid": ("unpaid", None), "overdue": ("overdue", "31"),
+          "needs_review": ("needs amount", "33")}
+
+
+def style(code, text):
+    return f"{CSI}{code}m{text}{RESET}" if COLOR and code else text
+
+
+# ---- formatting ----
+
+def euro(v):
+    """Decimal('1234.5') -> '1.234,50 €' (Greek format)."""
+    if v is None:
+        return "—"
+    s = f"{Decimal(v):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"{s} €"
+
+
+def day(iso):
+    return "—" if not iso else "/".join(reversed(iso.split("-")))
+
+
+def month_label(ym):
+    y, m = ym.split("-")
+    return f"{MONTHS[int(m) - 1]}/{y}"
+
+
+def status_of(b):
+    return "overdue" if b["overdue"] else b["status"]
+
+
+def when(b):
+    """Loan: its month. Others: the issue date."""
+    return month_label(b["extra"]["month"]) if b["extra"].get("month") else day(b["issue_date"])
+
+
+def due(b):
+    return "—" if b["extra"].get("month") else day(b["due_date"])
+
+
+def server_up():
+    with socket.socket() as s:
+        s.settimeout(0.3)
+        return s.connect_ex(SERVER) == 0
+
+
+def start_server():
+    """Web server for the links, unless one already runs (that one is left alone). No Bridge:
+    magibt starts its own on the first fetch (f), so plain browsing never wakes it."""
+    if server_up():
+        return None
+    script = Path(__file__).resolve().parent / "server.py"
+    return children.start([sys.executable, str(script), "--no-bridge", "--port", str(SERVER[1])])
+
+
+# ---- data ----
+
+def load():
+    with closing(db.connect()) as conn:
+        recurring.ensure(conn)                  # this month's loan entry
+        bills = db.list_bills(conn)             # newest first
+    latest, history = [], {}
+    for b in bills:
+        if b["vendor"] not in history:
+            latest.append(b)
+        history.setdefault(b["vendor"], []).append(b)
+    return latest, history
+
+
+def totals(bills):
+    total = sum((b["total_due"] for b in bills if b["total_due"] is not None), Decimal(0))
+    unpaid = sum((b["total_due"] for b in bills if b["total_due"] is not None and b["status"] != "paid"), Decimal(0))
+    missing = sum(1 for b in bills if b["total_due"] is None)
+    return total, unpaid, missing
+
+
+def sum_line(bills):
+    total, unpaid, missing = totals(bills)
+    return f"total {euro(total)}  unpaid {euro(unpaid)}" + (f"  {missing} without amount" if missing else "")
+
+
+# ---- rows: (text, color, right-aligned) per cell ----
+
+BILL_HEADS = ["VENDOR", "ISSUED", "DUE", "AMOUNT", "STATUS"]
+HIST_HEADS = ["ISSUED", "DUE", "AMOUNT", "STATUS", "PAID ON"]
+SUB_HEADS = ["SERVICE", "AMOUNT", "BILLED", "PER MONTH"]
+
+
+def bill_cells(b):
+    label, code = STATUS[status_of(b)]
+    return [(b["vendor"], None, False), (when(b), None, False), (due(b), None, False),
+            (euro(b["total_due"]), None, True), (label, code, False)]
+
+
+def hist_cells(b):
+    label, code = STATUS[status_of(b)]
+    return [(when(b), None, False), (due(b), None, False), (euro(b["total_due"]), None, True),
+            (label, code, False), (day(b["paid_on"]) if b["paid_on"] else "", "2", False)]
+
+
+def sub_cells(s):
+    return [(s["name"], None, False), (euro(s["amount"]), None, True), (s["cycle"], "2", False),
+            (euro(s["per_month"]), None, True)]
+
+
+def widths_for(heads, rows):
+    w = [len(h) for h in heads]
+    for row in rows:
+        for i, (text, _, _) in enumerate(row):
+            w[i] = max(w[i], len(text))
+    return w
+
+
+def render(row, widths, maxw, end=RESET):
+    """One line of cells, at most maxw visible characters."""
+    parts, used = [], 0
+    for i, (text, code, right) in enumerate(row):
+        last = i == len(row) - 1
+        cell = text.rjust(widths[i]) if right else (text if last else text.ljust(widths[i]))
+        cell += "" if last else "  "
+        cell = cell[:max(0, maxw - used)]
+        used += len(cell)
+        parts.append(f"{CSI}{code}m{cell}{end}" if COLOR and code else cell)
+    return "".join(parts), used
+
+
+def header(heads, widths, maxw):
+    return render([(h, HEAD, False) for h in heads], widths, maxw)[0]
+
+
+# ---- -s: print the tables ----
+
+def print_tables():
+    latest, _ = load()
+    subs = subscriptions.load()
+    maxw = shutil.get_terminal_size().columns - 3 if sys.stdout.isatty() else 10_000
+    for title, heads, rows, foot in (
+            ("BILLS", BILL_HEADS, [bill_cells(b) for b in latest], sum_line(latest)),
+            ("SUBSCRIPTIONS", SUB_HEADS, [sub_cells(s) for s in subs], subs_line(subs))):
+        print(style(TITLE, title))
+        if not rows:
+            print("  (none)\n")
+            continue
+        widths = widths_for(heads, rows)
+        print("  " + header(heads, widths, maxw))
+        for row in rows:
+            print("  " + render(row, widths, maxw)[0])
+        print(style("2", "  " + foot) + "\n")
+
+
+def subs_line(subs):
+    month, year = subscriptions.totals(subs)
+    return f"total {euro(month)} per month  {euro(year)} per year"
+
+
+# ---- raw mode: every keypress immediately, without echo (as in magicc) ----
+
+class Raw:
+    def __enter__(self):
+        self.fd = sys.stdin.fileno()
+        self.saved = termios.tcgetattr(self.fd)
+        raw = termios.tcgetattr(self.fd)
+        raw[3] &= ~(termios.ICANON | termios.ECHO | termios.ISIG)  # no line buffering/echo; Ctrl-C is a key
+        raw[0] &= ~(termios.IXON | termios.ICRNL)                  # Ctrl-S/Q as keys; Enter stays '\r'
+        raw[6][termios.VMIN], raw[6][termios.VTIME] = 1, 0
+        termios.tcsetattr(self.fd, termios.TCSAFLUSH, raw)
+        return self
+
+    def __exit__(self, *exc):
+        termios.tcsetattr(self.fd, termios.TCSAFLUSH, self.saved)   # never leave the terminal broken
+        out(SHOW_CURSOR)
+
+
+def out(s):
+    sys.stdout.write(s)
+    sys.stdout.flush()
+
+
+def ready(fd, secs):
+    return bool(select.select([fd], [], [], secs)[0])
+
+
+def read_key():
+    """Arrow keys arrive as several bytes: ESC [ A. A lone ESC is the Esc key itself."""
+    fd = sys.stdin.fileno()
+    c = os.read(fd, 1)
+    if not c:
+        return "esc"
+    if c == b"\x1b":
+        if not ready(fd, 0.03):
+            return "esc"
+        if os.read(fd, 1) not in (b"[", b"O"):
+            return None
+        s = os.read(fd, 1)
+        if s.isdigit():
+            while ready(fd, 0.03) and os.read(fd, 1) != b"~":
+                pass
+            return None
+        return {b"A": "up", b"B": "down", b"Z": "btab"}.get(s)
+    special = {13: "enter", 10: "enter", 127: "bs", 8: "bs", 9: "tab", 3: "esc", 16: "up", 14: "down"}
+    n = c[0]
+    return special.get(n) or (chr(n) if 32 <= n < 127 else None)
+
+
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def screen_rows(text, cols):
+    return sum(max(1, -(-len(ANSI.sub("", line)) // cols)) for line in text.split("\n"))
+
+
+# ---- the picker ----
+
+class Picker:
+    def __init__(self):
+        self.tab, self.vendor = 0, None         # vendor set = inside that vendor's history
+        self.sel = self.scroll = 0
+        self.saved_sel = 0                      # main-list position to return to
+        self.drawn = 0
+        self.message = ""
+        self.bridge = None                      # Bridge we started on f (None: not started, or not ours)
+        self.reload()
+
+    def reload(self):
+        self.latest, self.history = load()
+        self.subs = subscriptions.load()
+
+    # what the current view lists
+    def rows(self):
+        if self.tab == 1:
+            return self.subs
+        return self.history.get(self.vendor, []) if self.vendor else self.latest
+
+    def heads_and_cells(self):
+        if self.tab == 1:
+            return SUB_HEADS, sub_cells
+        return (HIST_HEADS, hist_cells) if self.vendor else (BILL_HEADS, bill_cells)
+
+    def erase(self):
+        if self.drawn > 1:
+            out(f"{CSI}{self.drawn - 1}A")
+        out("\r" + CLEAR_DOWN)
+        self.drawn = 0
+
+    def draw(self):
+        maxw = shutil.get_terminal_size().columns - 1
+        lines = []
+        bar = ""
+        for t, name in enumerate(TABS):         # tab bar:  [Bills]  Subscriptions
+            on = TAB_ON if COLOR else REVERSE
+            bar += f"{on} {name} {RESET} " if t == self.tab else f"{DIM} {name} {RESET} "
+        if self.vendor:
+            bar += f" {BOLD}› {self.vendor}{RESET}" if COLOR else f" > {self.vendor}"
+        lines.append(bar)
+
+        rows = self.rows()
+        heads, cells = self.heads_and_cells()
+        if self.tab == 0:
+            lines.append(style("2", "  " + sum_line(rows)))
+        visible = min(len(rows), MAX_VISIBLE)
+        self.sel = min(self.sel, max(0, len(rows) - 1))
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        if self.sel >= self.scroll + visible:
+            self.scroll = self.sel - visible + 1
+
+        all_cells = [cells(r) for r in rows]
+        widths = widths_for(heads, all_cells)
+        if rows:
+            lines.append("  " + header(heads, widths, maxw - 2))
+        for i in range(self.scroll, self.scroll + visible):
+            if i == self.sel:
+                row, used = render(all_cells[i], widths, maxw - 2, end=CELL_END)
+                if COLOR:
+                    lines.append(f"{SEL_BG}{BOLD}{CSI}36m▶ {CELL_END}{row}{' ' * (maxw - 2 - used)}{RESET}")
+                else:
+                    lines.append(f"{REVERSE}▶ {RESET}{row}")
+            else:
+                lines.append("  " + render(all_cells[i], widths, maxw - 2)[0])
+        if not rows:
+            lines.append(style("2", "  (none)"))
+
+        if self.tab == 1:
+            foot = f"  {subs_line(rows)}  j/k move  tab bills  q quit"
+        elif self.vendor:
+            foot = f"  {len(rows)} bills  j/k move  p paid  a amount  l links  f fetch  h/esc back  q quit"
+        else:
+            foot = f"  {len(rows)} vendors  j/k move  space history  l links  f fetch  tab subscriptions  q quit"
+        lines.append(style("2", foot[:maxw]))
+        if self.message:
+            lines.append(self.message)
+            self.message = ""
+
+        if self.drawn > 1:
+            out(f"{CSI}{self.drawn - 1}A")
+        out("\r" + CLEAR_DOWN + "\n".join(lines))
+        self.drawn = len(lines)
+
+    def current(self):
+        rows = self.rows()
+        return rows[self.sel] if rows and self.tab == 0 else None
+
+    # ---- actions
+    def toggle_paid(self, b):
+        if b["status"] == "needs_review":
+            self.message = style("33", "  enter the amount first (a)")
+            return
+        with closing(db.connect()) as conn:
+            (db.mark_unpaid if b["status"] == "paid" else db.mark_paid)(conn, b["id"])
+        self.reload()
+
+    def fetch(self):
+        """Fetch new bill emails, like the web UI's Fetch button. Bridge is started on the first
+        fetch and kept until magibt exits, so later fetches don't wait for it again."""
+        self.erase()
+        out(style("2", "  fetching new emails (Proton Bridge may take a few seconds to start)..."))
+        try:
+            if self.bridge is None:
+                self.bridge = bridge.start()     # None again if a Bridge already runs: then it isn't ours
+            if not bridge.wait_ready(self.bridge):
+                self.message = style("31", "  Proton Bridge did not start (check the GPG passphrase prompt)")
+                return
+            with closing(db.connect()) as conn:
+                s = ingest.run(conn)
+        except (mail.BridgeError, OSError, imaplib.IMAP4.error) as e:
+            self.message = style("31", f"  fetch failed: {e}")
+            return
+        finally:
+            out("\r" + CLEAR_DOWN)
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)   # drop keys pressed while waiting
+        added = ", ".join(v for v, _ in s["added"])
+        text = f"  added {len(s['added'])}" + (f" ({added})" if added else "")
+        if s["failed"]:
+            text += f", failed {len(s['failed'])}: " + "; ".join(f"{v}: {err}" for v, _, err in s["failed"])
+        self.message = style("31" if s["failed"] else "32" if s["added"] else "2", text)
+        self.reload()
+
+    def links(self, b):
+        """Show the URLs for this bill until a key is pressed."""
+        cols = shutil.get_terminal_size().columns
+        text = [f"{BOLD}{b['vendor']}{RESET}  {DIM}{when(b)}{RESET}" if COLOR else f"{b['vendor']}  {when(b)}"]
+        found = False
+        if emails.has(b["id"]):
+            text.append(style("2", "  email      ") + f"{BASE_URL}/bills/{b['id']}/email")
+            found = True
+        if b["attachment_path"]:
+            text.append(style("2", "  photo      ") + f"{BASE_URL}/api/bills/{b['id']}/attachment")
+            found = True
+        for key in ("payment_code", "recipient_name", "iban", "payment_comment"):
+            if b["extra"].get(key):
+                label = {"payment_code": "pay code", "recipient_name": "recipient",
+                         "payment_comment": "comment"}.get(key, key)
+                for i, line in enumerate(textwrap.wrap(str(b["extra"][key]), max(20, cols - 13))):
+                    text.append(style("2", f"  {label:<11}" if i == 0 else " " * 13) + line)
+        if not found:
+            text.append(style("2", "  no email or photo for this bill"))
+        elif not server_up():
+            text.append(style("33", "  web server not reachable (still starting, or failed: try python server.py)"))
+        text.append(style("2", "  any key: back"))
+        body = "\n".join(text)
+        out(body)
+        read_key()
+        rows = screen_rows(body, cols)
+        if rows > 1:
+            out(f"{CSI}{rows - 1}A")
+        out("\r" + CLEAR_DOWN)
+
+    def run(self):
+        """Returns ("amount", bill) to ask for input outside raw mode, or None to quit."""
+        out(HIDE_CURSOR)
+        while True:
+            self.draw()
+            key = read_key()
+            b = self.current()
+            if key in ("j", "down"):
+                self.sel = min(self.sel + 1, max(0, len(self.rows()) - 1))
+            elif key in ("k", "up"):
+                self.sel = max(0, self.sel - 1)
+            elif key == "g":
+                self.sel = 0
+            elif key == "G":
+                self.sel = max(0, len(self.rows()) - 1)
+            elif key in ("tab", "btab"):
+                self.tab, self.vendor, self.sel, self.scroll = 1 - self.tab, None, 0, 0
+            elif key == " " and b and not self.vendor:
+                self.saved_sel, self.vendor, self.sel, self.scroll = self.sel, b["vendor"], 0, 0
+            elif key in ("h", "esc") and self.vendor:
+                self.vendor, self.sel, self.scroll = None, self.saved_sel, 0
+            elif key == "p" and b and self.vendor:
+                self.toggle_paid(b)
+            elif key == "a" and b and self.vendor:
+                if b["status"] != "needs_review":   # parsed amounts are never overwritten by hand
+                    self.message = style("2", "  this bill's amount came from the email")
+                    continue
+                self.erase()
+                return "amount", b
+            elif key == "l" and b:
+                self.erase()
+                self.links(b)
+            elif key == "f" and self.tab == 0:
+                self.fetch()
+            elif key in ("q", "esc"):
+                self.erase()
+                return None
+
+
+def ask_amount(b):
+    """Line input (normal terminal mode) for a bill's amount."""
+    try:
+        text = input(f"amount for {b['vendor']} {when(b)} (e.g. 41,22, empty to cancel): ").strip()
+    except EOFError:
+        return ""
+    if not text:
+        return ""
+    try:
+        value = parse_amount(text)
+    except InvalidOperation:
+        return style("31", f"  not an amount: {text}")
+    if value <= 0:
+        return style("31", "  amount must be positive")
+    with closing(db.connect()) as conn:
+        db.set_amount(conn, b["id"], value)
+    return style("32", f"  saved {euro(value)}")
+
+
+def main():
+    global COLOR
+    args = sys.argv[1:]
+    if "-h" in args or "--help" in args:
+        print(__doc__.strip())
+        return 0
+    COLOR = sys.stdout.isatty() and "--no-color" not in args and not os.environ.get("NO_COLOR")
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda *_: sys.exit(1))  # unwind, so the terminal is restored
+    try:
+        if "-s" in args or not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print_tables()
+            return 0
+        server = start_server()
+        try:
+            return interactive()
+        finally:
+            children.stop(server)
+    except KeyboardInterrupt:
+        return 130
+
+
+def interactive():
+    picker = Picker()
+    try:
+        while True:
+            with Raw():
+                picked = picker.run()
+            if picked is None:
+                return 0
+            _, bill = picked
+            picker.message = ask_amount(bill)
+            out(f"{CSI}1A\r{CLEAR_DOWN}")           # remove the prompt line
+            picker.reload()
+    finally:
+        bridge.stop(picker.bridge)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

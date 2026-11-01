@@ -1,0 +1,59 @@
+# Example config with made-up values. The real one is bills.toml (gitignored).
+# The demo (demo/seed.py, demo/*.tape) runs on this file: MAGIBT_CONFIG=bills.example.toml
+#
+# One [[bill]] per tracked bill.
+#   name:    id, matches parsers/<name>.py and samples/<name>.eml
+#   from:    sender matches (substring: a full address or just a domain)
+#   subject: optional; keep only emails whose subject contains this
+#   any other keys are passed to the parser as-is (e.g. fixed payment details)
+
+[imap]
+user = "me@example.com"                     # Proton Bridge IMAP username
+
+[[bill]]
+name = "vodafone"
+from = "ebill@vodafone.example"
+subject = "My eBill"
+
+[[bill]]
+name = "enerwave"
+from = "e-bill@enerwave.example"
+
+[[bill]]
+name = "ydata"
+from = "bills@water-utility.example"
+subject = "Λογαριασμός"
+
+[[bill]]
+name = "koinoxrista"
+from = "manager@building.example"
+recipient_name = "BUILDING MANAGER"
+iban = "GR00 0000 0000 0000 0000 0000 000"
+payment_comment = "Common charges, apartment 0"
+
+# Monthly bill with no email: one entry per month from `start`.
+[[recurring]]
+name = "loan"
+amount = "300.00"
+start = "2026-08"
+
+# Static subscription list (Subscriptions tab), amounts per cycle.
+[[subscription]]
+name = "Music streaming"
+amount = "10.99"
+cycle = "monthly"
+
+[[subscription]]
+name = "VPS"
+amount = "4.51"
+cycle = "monthly"
+
+[[subscription]]
+name = "Mail"
+amount = "47.88"
+cycle = "yearly"
+
+[[subscription]]
+name = "Domain"
+amount = "10.00"
+cycle = "yearly"
