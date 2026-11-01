@@ -1,7 +1,5 @@
 # MagiBT
 
-<!-- TODO (you): one or two sentences — what MagiBT is and why you built it. -->
-
 Tracks household bills locally: bill emails are read over IMAP, parsed per vendor, and stored in SQLite. Two front ends share the same data: a terminal UI (`magibt`) and a small web page.
 
 ![magibt demo](demo/magibt.gif)
@@ -33,8 +31,6 @@ Tracks household bills locally: bill emails are read over IMAP, parsed per vendo
 ```
 
 ## Design notes
-
-<!-- TODO (you): add the "why" in your own words where you want; the facts below are the hooks. -->
 
 - **One parser per vendor** behind one interface, `parse(msg, bill) -> dict`. Shared fields are columns; vendor-specific ones go in a JSON `extra` column, so a new vendor needs no schema change.
 - **Idempotent ingest**: bills are deduplicated by `Message-ID`, so fetching again never adds duplicates.
