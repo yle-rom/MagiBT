@@ -1,14 +1,13 @@
 """Build a demo database with made-up bills, for screenshots and the vhs tapes.
 
-  python demo/seed.py        ->  demo/data/billing.db (recreated each run)
+  python -m demo.seed       ->  demo/data/billing.db (recreated each run)
 
 Run the app on it with:
-  MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data magibt
+  MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data bin/magibt
 
 Dates are relative to today, so paid / unpaid / overdue always look current.
 """
 import os
-import sys
 from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
@@ -17,11 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 os.environ["MAGIBT_CONFIG"] = str(ROOT / "bills.example.toml")
 os.environ["MAGIBT_DATA"] = str(ROOT / "demo" / "data")
-sys.path.insert(0, str(ROOT))
-
-import config  # noqa: E402
-import db  # noqa: E402
-import recurring  # noqa: E402
+from magibt import config, recurring  # noqa: E402  (after the env vars above)
+from magibt.storage import db  # noqa: E402
 
 # vendor, issued N days ago, days to pay, amount, paid?, extra fields
 BILLS = [

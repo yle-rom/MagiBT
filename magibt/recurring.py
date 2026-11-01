@@ -12,8 +12,8 @@ import calendar
 from datetime import date
 from decimal import Decimal
 
-import config
-import db
+from magibt import config
+from magibt.storage import db
 
 
 def load():

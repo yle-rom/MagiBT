@@ -1,8 +1,8 @@
 """Run a vendor parser on a saved .eml and print the fields.
 
 Usage:
-  python tools/parse_sample.py vodafone samples/vodafone.eml          # digits masked
-  python tools/parse_sample.py vodafone samples/vodafone.eml --show   # real values, local only
+  python -m tools.parse_sample vodafone local/samples/vodafone.eml          # digits masked
+  python -m tools.parse_sample vodafone local/samples/vodafone.eml --show   # real values, local only
 """
 import email
 import email.policy
@@ -10,11 +10,8 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))  # so `parsers` imports when run from anywhere
-
-import config  # noqa: E402
-from parsers import get_parser  # noqa: E402
+from magibt import config
+from magibt.parsers import get_parser
 
 
 def bill_config(name):

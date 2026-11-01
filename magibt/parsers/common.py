@@ -8,7 +8,7 @@ from email.message import EmailMessage
 from html.parser import HTMLParser
 from pathlib import Path
 
-import config
+from magibt import config
 
 
 class ParseError(Exception):
@@ -107,7 +107,7 @@ def jpeg_bytes(msg: EmailMessage) -> bytes:
 
 
 def save_attachment(data: bytes, bill_name: str, filename: str) -> Path:
-    """Write to data/attachments/<bill>/<filename>; same name overwrites, so re-parsing is safe."""
+    """Write to <data dir>/attachments/<bill>/<filename>; same name overwrites, so re-parsing is safe."""
     folder = ATTACHMENTS / bill_name
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / filename

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """magibt: the bill tracker in the terminal (same picker style as magicc/magips).
 
   magibt              interactive picker
@@ -23,19 +22,12 @@ import termios
 import textwrap
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import bridge  # noqa: E402
-import children  # noqa: E402
-import db  # noqa: E402
-import emails  # noqa: E402
-import ingest  # noqa: E402
-import mail  # noqa: E402
-import recurring  # noqa: E402
-import subscriptions  # noqa: E402
-from parsers.common import amount as parse_amount  # noqa: E402
+from magibt import config, proc, recurring, subscriptions
+from magibt.ingest import bridge, mail
+from magibt.ingest import fetch as ingest
+from magibt.parsers.common import amount as parse_amount
+from magibt.storage import db, emails
 
 SERVER = ("127.0.0.1", 8421)
 BASE_URL = f"http://{SERVER[0]}:{SERVER[1]}"
@@ -108,8 +100,8 @@ def start_server():
     magibt starts its own on the first fetch (f), so plain browsing never wakes it."""
     if server_up():
         return None
-    script = Path(__file__).resolve().parent / "server.py"
-    return children.start([sys.executable, str(script), "--no-bridge", "--port", str(SERVER[1])])
+    env = {**os.environ, "PYTHONPATH": str(config.ROOT)}      # so `-m web.server` finds the packages
+    return proc.start([sys.executable, "-m", "web.server", "--no-bridge", "--port", str(SERVER[1])], env=env)
 
 
 # ---- data ----
@@ -414,7 +406,7 @@ class Picker:
         if not found:
             text.append(style("2", "  no email or photo for this bill"))
         elif not server_up():
-            text.append(style("33", "  web server not reachable (still starting, or failed: try python server.py)"))
+            text.append(style("33", "  web server not reachable (still starting, or failed: try python -m web.server)"))
         text.append(style("2", "  any key: back"))
         body = "\n".join(text)
         out(body)
@@ -499,7 +491,7 @@ def main():
         try:
             return interactive()
         finally:
-            children.stop(server)
+            proc.stop(server)
     except KeyboardInterrupt:
         return 130
 

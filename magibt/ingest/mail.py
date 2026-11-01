@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timezone
 from email.message import EmailMessage, Message
 
-import config
+from magibt import config
 
 HOST, PORT = "127.0.0.1", 1143
 FOLDER = '"All Mail"'

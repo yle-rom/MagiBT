@@ -1,4 +1,4 @@
-"""Local web UI: python server.py [--db PATH] [--port N] [--no-bridge]  ->  http://127.0.0.1:8421
+"""Local web UI: python -m web.server [--db PATH] [--port N] [--no-bridge]  ->  http://127.0.0.1:8421
 
 Starts Proton Bridge with the server and stops it on exit (unless one is already running).
 
@@ -33,18 +33,15 @@ from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import bridge
-import db
-import emails
-import ingest
-import mail
-import recurring
-import subscriptions
-from parsers.common import ATTACHMENTS, amount as parse_amount
+from magibt import recurring, subscriptions
+from magibt.ingest import bridge, mail
+from magibt.ingest import fetch as ingest
+from magibt.parsers.common import ATTACHMENTS, amount as parse_amount
+from magibt.storage import db, emails
 
-ROOT = Path(__file__).resolve().parent
-INDEX = ROOT / "web" / "index.html"
-FAVICON = ROOT / "web" / "favicon.svg"
+STATIC = Path(__file__).resolve().parent / "static"
+INDEX = STATIC / "index.html"
+FAVICON = STATIC / "favicon.svg"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 DB_FILE = db.DB_PATH  # replaced by --db
 BRIDGE = None        # Bridge child process, if this server started one

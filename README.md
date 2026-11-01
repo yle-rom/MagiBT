@@ -20,13 +20,13 @@ Tracks household bills locally: bill emails are read over IMAP, parsed per vendo
    started on demand                       (senders, subjects, fixed
           │ IMAP, read-only                 payment details, subscriptions)
           ▼                                        │
- mail.py ──► ingest.py ──► parsers/<vendor>.py ◄───┘
-                │               (one file per vendor)
-                ▼
-         SQLite (bills)  +  original .eml files
+ magibt/ingest ──► magibt/parsers/<vendor>.py ◄─────┘
+       │                (one file per vendor)
+       ▼
+ magibt/storage: SQLite (bills) + original .eml files
           ▲                       ▲
           │                       │
-   server.py + web/         magibt (terminal UI)
+   web/ (server + static)   tui/ (magibt, terminal UI)
    127.0.0.1 only           f fetches, p marks paid
 ```
 
@@ -45,8 +45,8 @@ Tracks household bills locally: bill emails are read over IMAP, parsed per vendo
 Needs Python 3.11+, standard library only. The real ingest also uses `pass`, Proton Bridge and `pdftotext` (poppler).
 
 ```sh
-python demo/seed.py
-MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data ./magibt
+python -m demo.seed
+MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data bin/magibt
 ```
 
 Keys: `j/k` move · `space` vendor history · `p` paid · `a` amount · `l` payment details and links · `h` back · `tab` subscriptions · `q` quit. Fetching (`f`) needs a real Proton Bridge.
@@ -55,12 +55,10 @@ Keys: `j/k` move · `space` vendor history · `p` paid · `a` amount · `l` paym
 
 | Path | Role |
 |---|---|
-| `magibt` | Terminal UI |
-| `server.py`, `web/` | Web UI and JSON API |
-| `ingest.py`, `mail.py` | IMAP → parser → database |
-| `parsers/` | One parser per vendor, shared helpers in `common.py` |
-| `db.py`, `emails.py` | SQLite schema and queries; stored original emails |
-| `recurring.py`, `subscriptions.py` | Monthly entries; subscription totals |
-| `config.py`, `bills.example.toml` | Config/data paths; example config with made-up values |
+| `magibt/` | Core package, no UI code: `config`, `storage/` (SQLite, saved emails), `ingest/` (Bridge, IMAP, fetch), `parsers/` (one per vendor), `recurring`, `subscriptions`, `proc` (child processes) |
+| `tui/` | Terminal UI; `bin/magibt` launches it |
+| `web/` | Web server and JSON API (`python -m web.server`), page in `static/` |
+| `tools/` | Dev tools for writing parsers, run as `python -m tools.<name>` (digits masked by default) |
 | `demo/` | Demo seed and the vhs tape for the GIF |
-| `tools/` | Dev tools for writing parsers (digits masked by default) |
+| `bills.example.toml` | Example config with made-up values |
+| `local/` | Gitignored: real config, data, email samples, private notes |

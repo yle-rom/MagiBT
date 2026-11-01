@@ -7,8 +7,8 @@ unless something already listens on the IMAP port (e.g. the interactive
 import socket
 import time
 
-import children
-from mail import HOST, PORT
+from magibt import proc as child
+from magibt.ingest.mail import HOST, PORT
 
 CMD = ["protonmail-bridge-core", "--noninteractive"]
 
@@ -21,7 +21,7 @@ def is_listening(host=HOST, port=PORT):
 
 def start():
     """Start Bridge. Returns the process, or None if a Bridge was already running."""
-    return None if is_listening() else children.start(CMD)
+    return None if is_listening() else child.start(CMD)
 
 
 def wait_ready(proc, timeout=60):
@@ -37,4 +37,4 @@ def wait_ready(proc, timeout=60):
 
 
 def stop(proc):
-    children.stop(proc)
+    child.stop(proc)

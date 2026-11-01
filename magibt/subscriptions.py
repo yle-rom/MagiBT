@@ -1,7 +1,7 @@
 """Static [[subscription]] list from bills.toml (used by the web server and the CLI)."""
 from decimal import ROUND_CEILING, Decimal
 
-import config
+from magibt import config
 
 
 def load():

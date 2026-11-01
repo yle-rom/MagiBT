@@ -1,4 +1,4 @@
-"""Local copies of the original bill emails: data/emails/<bill id>.eml.
+"""Local copies of the original bill emails: <data dir>/emails/<bill id>.eml (default local/data).
 
 Kept so every bill can be checked against its source, offline, even if the
 email is later deleted from the mailbox.
@@ -8,7 +8,7 @@ import email.policy
 from email.message import EmailMessage
 from pathlib import Path
 
-import config
+from magibt import config
 
 EMAILS = config.DATA_DIR / "emails"
 

@@ -1,7 +1,7 @@
 """Show an email's structure and text with personal values masked.
 
 Usage:
-  python tools/inspect_eml.py samples/enerwave.eml [more.eml ...]
+  python -m tools.inspect_eml local/samples/enerwave.eml [more.eml ...]
 
 Prints the MIME tree (type, filename, size) and the text of plain/HTML
 bodies and PDF attachments (via pdftotext -layout), with:

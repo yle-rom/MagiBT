@@ -3,21 +3,17 @@
 Bills and their sender rules live in bills.toml (project root).
 
 Usage:
-  python tools/fetch_samples.py list
-  python tools/fetch_samples.py save
+  python -m tools.fetch_samples list
+  python -m tools.fetch_samples save
 
 list: print every match per bill, newest first (headers only).
-save: write the newest match per bill to samples/<name>.eml.
+save: write the newest match per bill to local/samples/<name>.eml.
 """
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+from magibt.config import SAMPLES
+from magibt.ingest import mail
 
-import mail  # noqa: E402
-
-SAMPLES = ROOT / "samples"
 
 
 def main():

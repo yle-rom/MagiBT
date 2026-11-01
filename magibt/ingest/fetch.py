@@ -1,7 +1,7 @@
 """Fetch bill emails over IMAP, parse them, store new ones in the database.
 
 Usage:
-  python ingest.py
+  python -m magibt.ingest.fetch
 
 Only emails whose Message-ID is not in the database yet are downloaded and
 parsed, so running it again is cheap and safe. A parser failure on one
@@ -13,15 +13,14 @@ import importlib.util
 import email
 import email.policy
 
-import db
-import emails
-import mail
-from parsers import get_parser
-from parsers.common import NotABill, ParseError
+from magibt.ingest import mail
+from magibt.parsers import get_parser
+from magibt.parsers.common import NotABill, ParseError
+from magibt.storage import db, emails
 
 
 def has_parser(name):
-    return importlib.util.find_spec(f"parsers.{name}") is not None
+    return importlib.util.find_spec(f"magibt.parsers.{name}") is not None
 
 
 def known_ids(conn):

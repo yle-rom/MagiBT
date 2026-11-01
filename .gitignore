@@ -1,7 +1,4 @@
-# Real bills and personal data: never commit
-bills.toml
-README.private.md
-samples/
-data/
+# Everything personal (real config, bills, emails, private notes) lives in local/
+local/
 demo/data/
 __pycache__/

@@ -24,7 +24,7 @@ The difference is only used for that check; it is not returned.
 import re
 from email.message import EmailMessage
 
-from parsers.common import ParseError, amount, gr_date, html_lines, next_line, pdf_lines
+from magibt.parsers.common import ParseError, amount, gr_date, html_lines, next_line, pdf_lines
 
 NUMBER_ONLY = re.compile(r"^\d+$")
 

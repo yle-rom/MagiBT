@@ -50,10 +50,10 @@ cycle = "monthly"
 
 [[subscription]]
 name = "Mail"
-amount = "47.88"
+amount = "59.40"
 cycle = "yearly"
 
 [[subscription]]
 name = "Domain"
-amount = "10.00"
+amount = "12.50"
 cycle = "yearly"

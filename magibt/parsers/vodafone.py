@@ -14,7 +14,7 @@ Layout (digits masked):
 """
 from email.message import EmailMessage
 
-from parsers.common import amount, find, gr_date, html_lines, next_line, value_after_colon
+from magibt.parsers.common import amount, find, gr_date, html_lines, next_line, value_after_colon
 
 
 def parse(msg: EmailMessage, bill: dict) -> dict:

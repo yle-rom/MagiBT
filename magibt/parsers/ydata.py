@@ -16,7 +16,7 @@ The two PDFs (bill copy, myDATA notice) are not needed.
 """
 from email.message import EmailMessage
 
-from parsers.common import amount, find, gr_date, html_lines, next_line
+from magibt.parsers.common import amount, find, gr_date, html_lines, next_line
 
 
 def parse(msg: EmailMessage, bill: dict) -> dict:

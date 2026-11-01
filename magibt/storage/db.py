@@ -13,7 +13,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import config
+from magibt import config
 
 DB_PATH = config.DATA_DIR / "billing.db"
 

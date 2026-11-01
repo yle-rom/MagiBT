@@ -9,7 +9,7 @@ Recipient name, IBAN and payment comment never change, so they come from bills.t
 """
 from email.message import EmailMessage
 
-from parsers.common import NotABill, ParseError, email_date, jpeg_bytes, save_attachment
+from magibt.parsers.common import NotABill, ParseError, email_date, jpeg_bytes, save_attachment
 
 
 def parse(msg: EmailMessage, bill: dict) -> dict:
