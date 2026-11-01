@@ -25,18 +25,18 @@ import recurring  # noqa: E402
 
 # vendor, issued N days ago, days to pay, amount, paid?, extra fields
 BILLS = [
-    ("vodafone", 92, 20, "24.90", True, {}),
-    ("vodafone", 61, 20, "24.90", True, {}),
-    ("vodafone", 31, 20, "27.40", True, {}),
-    ("vodafone", 1, 20, "24.90", False, {}),
-    ("enerwave", 85, 21, "61.37", True, {"kwh": 212}),
-    ("enerwave", 55, 21, "74.12", True, {"kwh": 258}),
-    ("enerwave", 24, 21, "58.03", False, {"kwh": 199}),     # overdue
-    ("ydata", 47, 30, "18.60", True, {"m3": 9}),
-    ("ydata", 6, 30, "21.15", False, {"m3": 11}),
-    ("koinoxrista", 58, 25, "35.00", True, {}),
-    ("koinoxrista", 27, 25, "35.00", True, {}),
-    ("koinoxrista", 0, 25, None, False, {}),                # amount still to enter
+    ("mobile", 92, 20, "24.90", True, {}),
+    ("mobile", 61, 20, "24.90", True, {}),
+    ("mobile", 31, 20, "27.40", True, {}),
+    ("mobile", 1, 20, "24.90", False, {}),
+    ("electricity", 85, 21, "61.37", True, {"kwh": 212}),
+    ("electricity", 55, 21, "74.12", True, {"kwh": 258}),
+    ("electricity", 24, 21, "58.03", False, {"kwh": 199}),     # overdue
+    ("water", 47, 30, "18.60", True, {"m3": 9}),
+    ("water", 6, 30, "21.15", False, {"m3": 11}),
+    ("building", 58, 25, "35.00", True, {}),
+    ("building", 27, 25, "35.00", True, {}),
+    ("building", 0, 25, None, False, {}),                # amount still to enter
 ]
 
 
@@ -52,7 +52,7 @@ def main():
             fields = {"issue_date": issued, "due_date": issued + timedelta(days=days),
                       "period_start": issued - timedelta(days=31), "period_end": issued - timedelta(days=1),
                       "payment_code": f"RF00 0000 0000 0000 {n:04d}", **extra}
-            if vendor == "koinoxrista":         # fixed payment details come from the config, as in the parser
+            if vendor == "building":         # fixed payment details come from the config, as in the parser
                 fields |= {k: fixed[vendor][k] for k in ("recipient_name", "iban", "payment_comment")}
                 fields.pop("payment_code")
             if amount is None:

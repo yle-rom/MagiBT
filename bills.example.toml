@@ -2,7 +2,7 @@
 # The demo (demo/seed.py, demo/*.tape) runs on this file: MAGIBT_CONFIG=bills.example.toml
 #
 # One [[bill]] per tracked bill.
-#   name:    id, matches parsers/<name>.py and samples/<name>.eml
+#   name:    id; in the real config it matches parsers/<name>.py (the demo uses generic names)
 #   from:    sender matches (substring: a full address or just a domain)
 #   subject: optional; keep only emails whose subject contains this
 #   any other keys are passed to the parser as-is (e.g. fixed payment details)
@@ -11,21 +11,21 @@
 user = "me@example.com"                     # Proton Bridge IMAP username
 
 [[bill]]
-name = "vodafone"
-from = "ebill@vodafone.example"
-subject = "My eBill"
+name = "mobile"
+from = "ebill@mobile-provider.example"
+subject = "eBill"
 
 [[bill]]
-name = "enerwave"
-from = "e-bill@enerwave.example"
+name = "electricity"
+from = "e-bill@power-provider.example"
 
 [[bill]]
-name = "ydata"
+name = "water"
 from = "bills@water-utility.example"
-subject = "Λογαριασμός"
+subject = "Bill"
 
 [[bill]]
-name = "koinoxrista"
+name = "building"
 from = "manager@building.example"
 recipient_name = "BUILDING MANAGER"
 iban = "GR00 0000 0000 0000 0000 0000 000"

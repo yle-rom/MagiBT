@@ -22,7 +22,7 @@ Show
 Type "magibt" Sleep 400ms Enter
 Sleep 2s
 
-# koinoxrista: the amount comes from a photo, so it is typed in by hand
+# building fees: the amount comes from a photo, so it is typed in by hand
 Type "j" Sleep 600ms
 Space Sleep 1.5s
 Type "a" Sleep 800ms
@@ -30,7 +30,7 @@ Type "35,00" Sleep 500ms Enter
 Sleep 1.5s
 Type "h" Sleep 1s
 
-# enerwave is overdue: open its history and mark it paid
+# electricity is overdue: open its history and mark it paid
 Type "j" Sleep 300ms Type "j" Sleep 300ms Type "j" Sleep 800ms
 Space Sleep 1.5s
 Type "p" Sleep 1.5s
