@@ -15,7 +15,7 @@ Env MAGIBT_CONFIG "bills.example.toml"
 Env MAGIBT_DATA "demo/data"
 
 Hide
-Type "export PS1='$ ' && python -m demo.seed >/dev/null && export PATH=$PWD/bin:$PATH && clear" Enter
+Type "export PS1='$ ' && python -m demo.seed >/dev/null && alias magibt=$PWD/tui/magibt.py && clear" Enter
 Sleep 500ms
 Show
 

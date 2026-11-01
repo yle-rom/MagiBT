@@ -46,7 +46,7 @@ Needs Python 3.11+, standard library only. The real ingest also uses `pass`, Pro
 
 ```sh
 python -m demo.seed
-MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data bin/magibt
+MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data tui/magibt.py
 ```
 
 Keys: `j/k` move · `space` vendor history · `p` paid · `a` amount · `l` payment details and links · `h` back · `tab` subscriptions · `q` quit. Fetching (`f`) needs a real Proton Bridge.
@@ -56,7 +56,7 @@ Keys: `j/k` move · `space` vendor history · `p` paid · `a` amount · `l` paym
 | Path | Role |
 |---|---|
 | `magibt/` | Core package, no UI code: `config`, `storage/` (SQLite, saved emails), `ingest/` (Bridge, IMAP, fetch), `parsers/` (one per vendor), `recurring`, `subscriptions`, `proc` (child processes) |
-| `tui/` | Terminal UI; `bin/magibt` launches it |
+| `tui/` | Terminal UI, `tui/magibt.py` (executable; symlink it onto PATH) |
 | `web/` | Web server and JSON API (`python -m web.server`), page in `static/` |
 | `tools/` | Dev tools for writing parsers, run as `python -m tools.<name>` (digits masked by default) |
 | `demo/` | Demo seed and the vhs tape for the GIF |

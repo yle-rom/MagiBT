@@ -3,7 +3,7 @@
   python -m demo.seed       ->  demo/data/billing.db (recreated each run)
 
 Run the app on it with:
-  MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data bin/magibt
+  MAGIBT_CONFIG=bills.example.toml MAGIBT_DATA=demo/data tui/magibt.py
 
 Dates are relative to today, so paid / unpaid / overdue always look current.
 """

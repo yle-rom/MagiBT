@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """magibt: the bill tracker in the terminal (same picker style as magicc/magips).
 
   magibt              interactive picker
@@ -22,12 +23,17 @@ import termios
 import textwrap
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-from magibt import config, proc, recurring, subscriptions
-from magibt.ingest import bridge, mail
-from magibt.ingest import fetch as ingest
-from magibt.parsers.common import amount as parse_amount
-from magibt.storage import db, emails
+# Run directly (through the ~/.local/bin symlink), Python puts tui/ first on the import path, where
+# this file would shadow the `magibt` package. Replace that entry with the repo root.
+sys.path[0] = str(Path(__file__).resolve().parent.parent)
+
+from magibt import config, proc, recurring, subscriptions  # noqa: E402
+from magibt.ingest import bridge, mail  # noqa: E402
+from magibt.ingest import fetch as ingest  # noqa: E402
+from magibt.parsers.common import amount as parse_amount  # noqa: E402
+from magibt.storage import db, emails  # noqa: E402
 
 SERVER = ("127.0.0.1", 8421)
 BASE_URL = f"http://{SERVER[0]}:{SERVER[1]}"
